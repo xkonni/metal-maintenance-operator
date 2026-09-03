@@ -17,6 +17,7 @@ import (
 	baseboardv1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1"
 	maintenancev1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/maintenance/v1alpha1"
 	constants "github.com/ironcore-dev/metal-maintenance-operator/internal/constants"
+	testutils "github.com/ironcore-dev/metal-maintenance-operator/internal/testutil"
 	metalv1alpha1 "github.com/ironcore-dev/metal-operator/api/v1alpha1"
 	bmcutils "github.com/ironcore-dev/metal-operator/pkg/bmcutils"
 	v1 "k8s.io/api/core/v1"
@@ -112,6 +113,11 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 		By("Ensuring that the BMC has right state: enabled")
 		Eventually(Object(bmc01)).Should(HaveField("Status.State", metalv1alpha1.BMCStateEnabled))
 
+		By("Patching server01 to Available so it can be Parked for maintenance")
+		Eventually(UpdateStatus(server01, func() {
+			server01.Status.State = metalv1alpha1.ServerStateAvailable
+		})).Should(Succeed())
+
 		By("Ensuring that the Server resource will be created")
 		server02 = &metalv1alpha1.Server{
 			ObjectMeta: metav1.ObjectMeta{
@@ -122,6 +128,11 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 
 		By("Ensuring that the BMC has right state: enabled")
 		Eventually(Object(bmc02)).Should(HaveField("Status.State", metalv1alpha1.BMCStateEnabled))
+
+		By("Patching server02 to Available so it can be Parked for maintenance")
+		Eventually(UpdateStatus(server02, func() {
+			server02.Status.State = metalv1alpha1.ServerStateAvailable
+		})).Should(Succeed())
 	})
 
 	AfterEach(func(ctx SpecContext) {
@@ -590,14 +601,6 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 			HaveField("Status.FailedBMCSettings", BeNumerically("==", 0)),
 		))
 
-		By("Checking if the BMC BMCSetting Ref has not be overritten by the 2nd BMCSettingsSet")
-		Eventually(Object(bmc01)).Should(
-			HaveField("Spec.BMCSettingRef.Name", Equal(bmcSettings01.Name)),
-		)
-		Consistently(Object(bmc01)).Should(
-			HaveField("Spec.BMCSettingRef.Name", Equal(bmcSettings01.Name)),
-		)
-
 		By("Checking the status of the 2nd BMCSettingsSet")
 		Eventually(Object(bmcSettingsSet2)).Should(SatisfyAll(
 			HaveField("Status.FullyLabeledBMCs", BeNumerically("==", 1)),
@@ -619,11 +622,6 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 		Eventually(Get(bmcSettingsSet1)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, bmcSettings01)).To(Succeed())
 		Eventually(Get(bmcSettings01)).Should(Satisfy(apierrors.IsNotFound))
-
-		By("Checking if the BMCSettingRef of the BMC is empty")
-		Eventually(Object(bmc01)).Should(
-			HaveField("Spec.BMCSettingRef", BeNil()),
-		)
 
 		By("Checking the status of the 2nd BMCSettingsSet")
 		Eventually(Object(bmcSettingsSet2)).Should(SatisfyAll(
@@ -653,14 +651,6 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 			},
 		}
 		Eventually(Get(bmcSettings01_02)).Should(Succeed())
-
-		By("Checking if the BMCSetting Ref in the BMC objets has been set by the 2nd BMCSettingsSet")
-		Eventually(Object(bmc01)).Should(
-			HaveField("Spec.BMCSettingRef.Name", Equal(bmcSettings01_02.Name)),
-		)
-		Consistently(Object(bmc01)).Should(
-			HaveField("Spec.BMCSettingRef.Name", Equal(bmcSettings01_02.Name)),
-		)
 
 		By("Checking if the status has been updated")
 		Eventually(Object(bmcSettingsSet2)).Should(SatisfyAll(
@@ -803,11 +793,7 @@ var _ = Describe("BMCSettingsSet Controller", func() {
 		Expect(k8sClient.Delete(ctx, bmcSettings01)).To(Succeed())
 		Eventually(Get(bmcSettings01)).Should(Satisfy(apierrors.IsNotFound))
 
-		Eventually(Object(server01)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server02)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
+		Eventually(Object(server01)).Should(testutils.ServerNotParked)
+		Eventually(Object(server02)).Should(testutils.ServerNotParked)
 	})
 })

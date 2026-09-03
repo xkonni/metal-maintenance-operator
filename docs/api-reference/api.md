@@ -15,6 +15,7 @@ Package v1alpha1 contains API Schema definitions for the baseboard.metal.ironcor
 ### Resource Types
 - [BMCSettings](#bmcsettings)
 - [BMCSettingsSet](#bmcsettingsset)
+- [BMCUser](#bmcuser)
 - [BMCVersion](#bmcversion)
 - [BMCVersionSet](#bmcversionset)
 
@@ -37,6 +38,25 @@ BMCSettings is the Schema for the BMCSettings API.
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
 | `spec` _[BMCSettingsSpec](#bmcsettingsspec)_ |  |  |  |
 | `status` _[BMCSettingsStatus](#bmcsettingsstatus)_ |  |  |  |
+
+
+#### BMCSettingsApplyResultEntry
+
+
+
+BMCSettingsApplyResultEntry holds the URI, ETag, and value hash from the last
+successful apply of a single settings key. Used for ETag-based drift detection.
+
+
+
+_Appears in:_
+- [BMCSettingsStatus](#bmcsettingsstatus)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `uri` _string_ | URI is the Redfish resource URI from the apply response.<br />For PATCH operations this is the request URI; for POST operations this is<br />the Location header value pointing to the created resource. |  |  |
+| `etag` _string_ | ETag is the drift-detection token captured after the last successful apply.<br />Either a real ETag returned by the BMC (e.g. W/"20B77DA6") or a SHA-256<br />hash of the GET response body prefixed with "hash:sha256:" for BMCs that<br />do not return ETag headers. |  |  |
+| `valueHash` _string_ | ValueHash is the SHA-256 hash of the effective (resolved) value at apply time.<br />Used to detect desired-state changes from ConfigMap/Secret rotation independent<br />of BMC-side drift. |  |  |
 
 
 #### BMCSettingsSet
@@ -153,6 +173,7 @@ _Appears in:_
 | `state` _[BMCSettingsState](#bmcsettingsstate)_ | State represents the current state of the BMC configuration task. |  |  |
 | `failedAttempts` _integer_ | FailedAttempts is the number of automatic retry attempts made after failure. |  |  |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent generation observed by the controller. |  |  |
+| `appliedETags` _object (keys:string, values:[BMCSettingsApplyResultEntry](#bmcsettingsapplyresultentry))_ | AppliedETags stores the URI, ETag, and value hash from the last successful<br />apply for each settings key. Used for ETag-based drift detection during<br />verification to avoid unnecessary re-applies and to reliably detect<br />write-only field drift (e.g. passwords) and POST-created resource drift<br />(e.g. certificates). |  |  |
 | `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#condition-v1-meta) array_ | Conditions represents the latest available observations of the BMC Settings Resource state. |  |  |
 
 
@@ -175,6 +196,66 @@ _Appears in:_
 | `retryPolicy` _[RetryPolicy](#retrypolicy)_ | RetryPolicy defines the retry behavior for automatic retries on transient failures. |  |  |
 | `variables` _[Variable](#variable) array_ | Variables is a list of variables that can be used in the settings for templating. |  | MaxItems: 64 <br /> |
 | `serverMaintenancePolicy` _[ServerMaintenancePolicy](#servermaintenancepolicy)_ | ServerMaintenancePolicy is a maintenance policy to be applied on the server. |  |  |
+
+
+#### BMCUser
+
+
+
+BMCUser is the Schema for the bmcusers API.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `baseboard.metal.ironcore.dev/v1alpha1` | | |
+| `kind` _string_ | `BMCUser` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[BMCUserSpec](#bmcuserspec)_ |  |  |  |
+| `status` _[BMCUserStatus](#bmcuserstatus)_ |  |  |  |
+
+
+#### BMCUserSpec
+
+
+
+BMCUserSpec defines the desired state of BMCUser.
+
+
+
+_Appears in:_
+- [BMCUser](#bmcuser)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `userName` _string_ | UserName is the username of the BMC user. |  |  |
+| `roleID` _string_ | RoleID is the ID of the role to assign to the user. |  |  |
+| `description` _string_ | Description is a description for the BMC user. |  |  |
+| `rotationPeriod` _[Duration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#duration-v1-meta)_ | RotationPeriod defines how often the password should be rotated.<br />If not set, the password will not be rotated. |  |  |
+| `bmcSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#localobjectreference-v1-core)_ | BMCSecretRef references the BMCSecret containing the credentials for this user.<br />If not set, the operator will generate a secure password based on BMC manufacturer requirements. |  |  |
+| `bmcRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#localobjectreference-v1-core)_ | BMCRef references the BMC this user should be created on. |  |  |
+
+
+#### BMCUserStatus
+
+
+
+BMCUserStatus defines the observed state of BMCUser.
+
+
+
+_Appears in:_
+- [BMCUser](#bmcuser)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `effectiveBMCSecretRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#localobjectreference-v1-core)_ | EffectiveBMCSecretRef references the BMCSecret currently used for this user.<br />This may differ from Spec.BMCSecretRef if the operator generated a password. |  |  |
+| `lastRotation` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#time-v1-meta)_ | LastRotation is the timestamp of the last password rotation. |  |  |
+| `passwordExpiration` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#time-v1-meta)_ | PasswordExpiration is the timestamp when the password will expire. |  |  |
+| `id` _string_ | ID is the identifier of the user in the BMC system. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#condition-v1-meta) array_ | Conditions reflects the current state of the BMCUser. |  |  |
 
 
 #### BMCVersion
@@ -381,7 +462,8 @@ _Appears in:_
 - [BMCSettingsTemplate](#bmcsettingstemplate)
 - [BMCVersionSpec](#bmcversionspec)
 - [BMCVersionTemplate](#bmcversiontemplate)
-- [FirmwareUpdateDellSpec](#firmwareupdatedellspec)
+- [FirmwareUpdateSpec](#firmwareupdatespec)
+- [FirmwareUpdateTemplate](#firmwareupdatetemplate)
 - [ServerMaintenanceSpec](#servermaintenancespec)
 - [SettingsTemplate](#settingstemplate)
 
@@ -586,7 +668,8 @@ Package v1alpha1 contains API Schema definitions for the system.metal.ironcore.d
 - [BIOSSettingsSet](#biossettingsset)
 - [BIOSVersion](#biosversion)
 - [BIOSVersionSet](#biosversionset)
-- [FirmwareUpdateDell](#firmwareupdatedell)
+- [FirmwareUpdate](#firmwareupdate)
+- [FirmwareUpdateSet](#firmwareupdateset)
 
 
 
@@ -950,21 +1033,19 @@ _Appears in:_
 
 
 
-ComponentJobsSummary tallies the current pass's per-component jobs (ComponentJobs) by
-completion state, computed by the controller purely for observability (e.g. printcolumns);
-controller logic drives off ComponentJobs directly rather than this summary.
+ComponentJobsSummary tallies per-component jobs by completion state.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDellStatus](#firmwareupdatedellstatus)
+- [FirmwareUpdateStatus](#firmwareupdatestatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `total` _integer_ | Total is the number of component jobs discovered so far in the current pass. |  |  |
-| `completed` _integer_ | Completed is the number of component jobs that finished successfully. |  |  |
-| `inProgress` _integer_ | InProgress is the number of component jobs that have not yet reached a terminal state. |  |  |
-| `failed` _integer_ | Failed is the number of component jobs that finished in a failed state. |  |  |
+| `total` _integer_ |  |  |  |
+| `completed` _integer_ |  |  |  |
+| `inProgress` _integer_ |  |  |  |
+| `failed` _integer_ |  |  |  |
 
 
 #### DellShareType
@@ -976,7 +1057,7 @@ DellShareType is the type of network share hosting the Dell update repository/ca
 
 
 _Appears in:_
-- [RepositorySpec](#repositoryspec)
+- [FirmwareRepository](#firmwarerepository)
 
 | Field | Description |
 | --- | --- |
@@ -986,11 +1067,38 @@ _Appears in:_
 | `HTTPS` |  |
 
 
-#### FirmwareUpdateDell
+#### FirmwareRepository
 
 
 
-FirmwareUpdateDell is the Schema for the firmwareupdatedells API.
+FirmwareRepository describes the network share hosting Dell's update repository/catalog, as
+consumed by DellSoftwareInstallationService.InstallFromRepository.
+
+
+
+_Appears in:_
+- [FirmwareUpdateSpec](#firmwareupdatespec)
+- [FirmwareUpdateTemplate](#firmwareupdatetemplate)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `shareType` _[DellShareType](#dellsharetype)_ | ShareType is the type of network share hosting the repository. |  | Enum: [NFS CIFS HTTP HTTPS] <br /> |
+| `address` _string_ | Address is the share's hostname or IP address (e.g. downloads.dell.com). |  |  |
+| `shareName` _string_ | ShareName is the network share name. Not required for HTTP/HTTPS catalogs. |  |  |
+| `catalogFile` _string_ | CatalogFile is the catalog file name within the share. Defaults to "Catalog.xml". |  |  |
+| `workgroup` _string_ | Workgroup is the CIFS workgroup, if applicable. |  |  |
+| `credentialsRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#secretreference-v1-core)_ | CredentialsRef references the credentials used to authenticate against the share, if required. |  |  |
+| `ignoreCertWarning` _boolean_ | IgnoreCertWarning, if true, ignores certificate warnings for HTTPS shares. |  |  |
+| `rebootNeeded` _boolean_ | RebootNeeded, if true, allows the BMC to reboot the server to apply updates. |  |  |
+| `applySameVersions` _boolean_ | ApplySameVersions, if true, re-applies packages already at the same version. |  |  |
+| `applyDowngradeVersions` _boolean_ | ApplyDowngradeVersions, if true, allows applying packages older than the currently installed version. |  |  |
+
+
+#### FirmwareUpdate
+
+
+
+FirmwareUpdate is the Schema for the firmwareupdates API.
 
 
 
@@ -999,94 +1107,173 @@ FirmwareUpdateDell is the Schema for the firmwareupdatedells API.
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
 | `apiVersion` _string_ | `system.metal.ironcore.dev/v1alpha1` | | |
-| `kind` _string_ | `FirmwareUpdateDell` | | |
+| `kind` _string_ | `FirmwareUpdate` | | |
 | `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
-| `spec` _[FirmwareUpdateDellSpec](#firmwareupdatedellspec)_ |  |  |  |
-| `status` _[FirmwareUpdateDellStatus](#firmwareupdatedellstatus)_ |  |  |  |
+| `spec` _[FirmwareUpdateSpec](#firmwareupdatespec)_ |  |  |  |
+| `status` _[FirmwareUpdateStatus](#firmwareupdatestatus)_ |  |  |  |
 
 
-#### FirmwareUpdateDellSpec
+#### FirmwareUpdateSet
 
 
 
-FirmwareUpdateDellSpec defines the desired state of FirmwareUpdateDell.
+FirmwareUpdateSet is the Schema for the firmwareupdatesets API.
+
+
+
+
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `apiVersion` _string_ | `system.metal.ironcore.dev/v1alpha1` | | |
+| `kind` _string_ | `FirmwareUpdateSet` | | |
+| `metadata` _[ObjectMeta](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#objectmeta-v1-meta)_ | Refer to Kubernetes API documentation for fields of `metadata`. |  |  |
+| `spec` _[FirmwareUpdateSetSpec](#firmwareupdatesetspec)_ |  |  |  |
+| `status` _[FirmwareUpdateSetStatus](#firmwareupdatesetstatus)_ |  |  |  |
+
+
+#### FirmwareUpdateSetSpec
+
+
+
+FirmwareUpdateSetSpec defines the desired state of FirmwareUpdateSet.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDell](#firmwareupdatedell)
+- [FirmwareUpdateSet](#firmwareupdateset)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `repository` _[RepositorySpec](#repositoryspec)_ | Repository describes the network share hosting the update repository/catalog. |  |  |
-| `applySameVersions` _boolean_ | ApplySameVersions, if true, re-applies packages already at the same version. |  |  |
-| `applyDowngradeVersions` _boolean_ | ApplyDowngradeVersions, if true, allows applying packages older than the currently installed version. |  |  |
-| `serverMaintenanceRef` _[ObjectReference](#objectreference)_ | ServerMaintenanceRef is a reference to a ServerMaintenance object that the controller has requested for the referred server. |  |  |
+| `serverSelector` _[LabelSelector](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#labelselector-v1-meta)_ | ServerSelector specifies a label selector to identify the servers to apply the firmware update on. |  |  |
+| `firmwareUpdateTemplate` _[FirmwareUpdateTemplate](#firmwareupdatetemplate)_ | FirmwareUpdateTemplate defines the template for the FirmwareUpdate resource to be applied to the servers. |  |  |
+| `updateStrategy` _[FirmwareUpdateSetUpdateStrategy](#firmwareupdatesetupdatestrategy)_ | UpdateStrategy controls how FirmwareUpdate children are rolled out. |  |  |
+
+
+#### FirmwareUpdateSetStatus
+
+
+
+FirmwareUpdateSetStatus defines the observed state of FirmwareUpdateSet.
+
+
+
+_Appears in:_
+- [FirmwareUpdateSet](#firmwareupdateset)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `matchingServers` _integer_ | MatchingServers is the number of servers matching the selector. |  |  |
+| `pendingFirmwareUpdate` _integer_ | PendingFirmwareUpdate is the number of FirmwareUpdate resources in a pending state. |  |  |
+| `inProgressFirmwareUpdate` _integer_ | InProgressFirmwareUpdate is the number of FirmwareUpdate resources currently in progress. |  |  |
+| `completedFirmwareUpdate` _integer_ | CompletedFirmwareUpdate is the number of FirmwareUpdate resources that completed successfully. |  |  |
+| `failedFirmwareUpdate` _integer_ | FailedFirmwareUpdate is the number of FirmwareUpdate resources that failed. |  |  |
+
+
+#### FirmwareUpdateSetUpdateStrategy
+
+
+
+FirmwareUpdateSetUpdateStrategy controls rollout concurrency for a FirmwareUpdateSet.
+Future knobs (pauseOnFailure, wave sizing) will be added here.
+
+
+
+_Appears in:_
+- [FirmwareUpdateSetSpec](#firmwareupdatesetspec)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `maxConcurrent` _integer_ | MaxConcurrent limits the number of FirmwareUpdate children in InProgress state at once.<br />Zero means unlimited. |  |  |
+
+
+#### FirmwareUpdateSpec
+
+
+
+FirmwareUpdateSpec defines the desired state of FirmwareUpdate.
+
+
+
+_Appears in:_
+- [FirmwareUpdate](#firmwareupdate)
+
+| Field | Description | Default | Validation |
+| --- | --- | --- | --- |
+| `repository` _[FirmwareRepository](#firmwarerepository)_ | Repository describes the network share hosting the Dell update repository/catalog. |  |  |
+| `image` _[ImageSpec](#imagespec)_ | Image describes the OTB firmware image parameters (HPE, Lenovo). |  |  |
 | `serverMaintenancePolicy` _[ServerMaintenancePolicy](#servermaintenancepolicy)_ | ServerMaintenancePolicy is a maintenance policy to be enforced on the server. |  |  |
-| `serverRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#localobjectreference-v1-core)_ | ServerRef is a reference to a specific server to apply the repository-based firmware update on. |  |  |
 | `retryPolicy` _[RetryPolicy](#retrypolicy)_ | RetryPolicy defines the retry behavior for automatic retries on transient failures. |  |  |
+| `serverRef` _[LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#localobjectreference-v1-core)_ | ServerRef is a reference to a specific server to apply the firmware update on. |  |  |
+| `progressDeadlineSeconds` _integer_ | ProgressDeadlineSeconds is the maximum time in seconds to wait without observable forward<br />progress before the update is marked Failed. Defaults to 3600 (1 hour). | 3600 |  |
+| `ttlSecondsAfterFinished` _integer_ | TTLSecondsAfterFinished, if set, causes the FirmwareUpdate to be deleted that many seconds<br />after it reaches Completed state. Failed objects are retained for operator inspection. |  |  |
 
 
-#### FirmwareUpdateDellState
+#### FirmwareUpdateState
 
 _Underlying type:_ _string_
 
-FirmwareUpdateDellState describes the current state of a FirmwareUpdateDell.
+FirmwareUpdateState describes the current state of a FirmwareUpdate.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDellStatus](#firmwareupdatedellstatus)
+- [FirmwareUpdateStatus](#firmwareupdatestatus)
 
 | Field | Description |
 | --- | --- |
-| `Pending` | FirmwareUpdateDellStatePending specifies that the repository-based firmware update is waiting.<br /> |
-| `InProgress` | FirmwareUpdateDellStateInProgress specifies that the repository-based firmware update is in progress.<br /> |
-| `Completed` | FirmwareUpdateDellStateCompleted specifies that the repository-based firmware update has been completed.<br /> |
-| `Failed` | FirmwareUpdateDellStateFailed specifies that the repository-based firmware update has failed.<br /> |
+| `Pending` | FirmwareUpdateStatePending specifies that the firmware update is waiting.<br /> |
+| `InProgress` | FirmwareUpdateStateInProgress specifies that the firmware update is in progress.<br /> |
+| `Completed` | FirmwareUpdateStateCompleted specifies that the firmware update has been completed.<br /> |
+| `Failed` | FirmwareUpdateStateFailed specifies that the firmware update has failed.<br /> |
 
 
-#### FirmwareUpdateDellStatus
+#### FirmwareUpdateStatus
 
 
 
-FirmwareUpdateDellStatus defines the observed state of FirmwareUpdateDell.
+FirmwareUpdateStatus defines the observed state of FirmwareUpdate.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDell](#firmwareupdatedell)
+- [FirmwareUpdate](#firmwareupdate)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `state` _[FirmwareUpdateDellState](#firmwareupdatedellstate)_ | State represents the current state of the repository-based firmware update. |  |  |
+| `state` _[FirmwareUpdateState](#firmwareupdatestate)_ | State represents the current state of the firmware update. |  |  |
+| `serverMaintenanceRef` _[ObjectReference](#objectreference)_ | ServerMaintenanceRef is a reference to the ServerMaintenance object the controller created for this update. |  |  |
 | `checkJob` _[RepositoryJob](#repositoryjob)_ | CheckJob contains the state of the dry-run catalog-check job. |  |  |
 | `updateJob` _[RepositoryJob](#repositoryjob)_ | UpdateJob contains the state of the main apply job. |  |  |
 | `componentJobs` _[RepositoryJob](#repositoryjob) array_ | ComponentJobs contains the state of the per-component jobs spawned by the current pass's apply job. |  |  |
 | `componentJobsSummary` _[ComponentJobsSummary](#componentjobssummary)_ | ComponentJobsSummary tallies ComponentJobs by completion state. |  |  |
 | `baselineJobIDs` _string array_ | BaselineJobIDs contains the iDRAC job IDs present just before issuing the apply call for the<br />current pass, used to diff and discover newly spawned component jobs. |  |  |
-| `passCount` _integer_ | PassCount is the number of check->apply->track->recheck passes completed so far. It bounds<br />the internal convergence loop. |  |  |
+| `baselineJobsCaptured` _boolean_ | BaselineJobsCaptured is true once BaselineJobIDs has been successfully populated for the current pass. |  |  |
+| `lastProgressTime` _[Time](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#time-v1-meta)_ | LastProgressTime records the last time the controller observed forward progress.<br />Used together with ProgressDeadlineSeconds to detect stalled updates. |  |  |
+| `passCount` _integer_ | PassCount is the number of check->apply->track->recheck passes completed so far. |  |  |
 | `failedAttempts` _integer_ | FailedAttempts is the number of automatic retry attempts made after failure. |  |  |
 | `observedGeneration` _integer_ | ObservedGeneration is the most recent generation observed by the controller. |  |  |
-| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#condition-v1-meta) array_ | Conditions represents the latest available observations of the repository-based firmware update state. |  |  |
+| `conditions` _[Condition](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#condition-v1-meta) array_ | Conditions represents the latest available observations of the firmware update state. |  |  |
 
 
-#### FirmwareUpdateDellTemplate
+#### FirmwareUpdateTemplate
 
 
 
-FirmwareUpdateDellTemplate defines the desired repository-based firmware update parameters.
+FirmwareUpdateTemplate defines the desired firmware update parameters.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDellSpec](#firmwareupdatedellspec)
+- [FirmwareUpdateSetSpec](#firmwareupdatesetspec)
+- [FirmwareUpdateSpec](#firmwareupdatespec)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `repository` _[RepositorySpec](#repositoryspec)_ | Repository describes the network share hosting the update repository/catalog. |  |  |
-| `applySameVersions` _boolean_ | ApplySameVersions, if true, re-applies packages already at the same version. |  |  |
-| `applyDowngradeVersions` _boolean_ | ApplyDowngradeVersions, if true, allows applying packages older than the currently installed version. |  |  |
+| `repository` _[FirmwareRepository](#firmwarerepository)_ | Repository describes the network share hosting the Dell update repository/catalog. |  |  |
+| `image` _[ImageSpec](#imagespec)_ | Image describes the OTB firmware image parameters (HPE, Lenovo). |  |  |
+| `serverMaintenancePolicy` _[ServerMaintenancePolicy](#servermaintenancepolicy)_ | ServerMaintenancePolicy is a maintenance policy to be enforced on the server. |  |  |
+| `retryPolicy` _[RetryPolicy](#retrypolicy)_ | RetryPolicy defines the retry behavior for automatic retries on transient failures. |  |  |
 
 
 #### RepositoryJob
@@ -1094,47 +1281,21 @@ _Appears in:_
 
 
 RepositoryJob represents a Dell iDRAC job resource tracking a repository-based firmware
-operation. State is intentionally a plain string (not a gofish schemas.TaskState or
-schemas.JobState), mirroring bmc.DellJob, so consumers of this API do not need to depend on
-the gofish module.
+operation. State is intentionally a plain string mirroring bmc.DellJob.
 
 
 
 _Appears in:_
-- [FirmwareUpdateDellStatus](#firmwareupdatedellstatus)
+- [FirmwareUpdateStatus](#firmwareupdatestatus)
 
 | Field | Description | Default | Validation |
 | --- | --- | --- | --- |
-| `jobID` _string_ | JobID is the iDRAC job identifier (e.g. "JID_..."). |  |  |
-| `name` _string_ | Name is the job's display name. |  |  |
-| `jobType` _string_ | JobType is the Dell-reported job type (e.g. "RepositoryUpdate", "FirmwareUpdate"). |  |  |
-| `state` _string_ | State is the Dell-reported raw JobState string. |  |  |
-| `message` _string_ | Message is the Dell-reported status message. |  |  |
-| `percentComplete` _integer_ | PercentComplete is the Dell-reported completion percentage. |  |  |
-
-
-#### RepositorySpec
-
-
-
-RepositorySpec describes the network share hosting Dell's update repository/catalog, as
-consumed by DellSoftwareInstallationService.InstallFromRepository.
-
-
-
-_Appears in:_
-- [FirmwareUpdateDellSpec](#firmwareupdatedellspec)
-- [FirmwareUpdateDellTemplate](#firmwareupdatedelltemplate)
-
-| Field | Description | Default | Validation |
-| --- | --- | --- | --- |
-| `shareType` _[DellShareType](#dellsharetype)_ | ShareType is the type of network share hosting the repository. |  | Enum: [NFS CIFS HTTP HTTPS] <br /> |
-| `address` _string_ | Address is the share's IP address or hostname (e.g. downloads.dell.com). |  |  |
-| `shareName` _string_ | ShareName is the network share name. Not required for HTTP/HTTPS catalogs. |  |  |
-| `catalogFile` _string_ | CatalogFile is the catalog file name within the share. Defaults to "Catalog.xml". |  |  |
-| `workgroup` _string_ | Workgroup is the CIFS workgroup, if applicable. |  |  |
-| `secretRef` _[SecretReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.35/#secretreference-v1-core)_ | SecretRef references the credentials used to authenticate against the share, if required. |  |  |
-| `ignoreCertWarning` _boolean_ | IgnoreCertWarning, if true, ignores certificate warnings for HTTPS shares. |  |  |
+| `jobID` _string_ |  |  |  |
+| `name` _string_ |  |  |  |
+| `jobType` _string_ |  |  |  |
+| `state` _string_ |  |  |  |
+| `message` _string_ |  |  |  |
+| `percentComplete` _integer_ |  |  |  |
 
 
 

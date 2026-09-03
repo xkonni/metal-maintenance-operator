@@ -17,6 +17,7 @@ import (
 	maintenancev1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/maintenance/v1alpha1"
 	systemv1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1"
 	constants "github.com/ironcore-dev/metal-maintenance-operator/internal/constants"
+	testutils "github.com/ironcore-dev/metal-maintenance-operator/internal/testutil"
 	metalv1alpha1 "github.com/ironcore-dev/metal-operator/api/v1alpha1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -120,6 +121,17 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 			},
 		}
 		Expect(k8sClient.Create(ctx, server03)).Should(Succeed())
+
+		By("Patching servers to Available so they can be Parked for maintenance")
+		Eventually(UpdateStatus(server01, func() {
+			server01.Status.State = metalv1alpha1.ServerStateAvailable
+		})).Should(Succeed())
+		Eventually(UpdateStatus(server02, func() {
+			server02.Status.State = metalv1alpha1.ServerStateAvailable
+		})).Should(Succeed())
+		Eventually(UpdateStatus(server03, func() {
+			server03.Status.State = metalv1alpha1.ServerStateAvailable
+		})).Should(Succeed())
 	})
 
 	AfterEach(func(ctx SpecContext) {
@@ -220,15 +232,9 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		Eventually(Get(biosSettings03)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, biosSettings02)).To(Succeed())
 		Eventually(Get(biosSettings02)).Should(Satisfy(apierrors.IsNotFound))
-		Eventually(Object(server01)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server02)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
+		Eventually(Object(server01)).Should(testutils.ServerNotParked)
+		Eventually(Object(server02)).Should(testutils.ServerNotParked)
+		Eventually(Object(server03)).Should(testutils.ServerNotParked)
 	})
 
 	It("should successfully reconcile the resource when servers are deleted/created", func(ctx SpecContext) {
@@ -335,7 +341,6 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 
 		By("creating the server02")
 		server02.ResourceVersion = ""
-		server02.Spec.BIOSSettingsRef = nil
 		Expect(k8sClient.Create(ctx, server02)).Should(Succeed())
 
 		By("Checking if the BIOSSettings have been created")
@@ -401,15 +406,9 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		Eventually(Get(biosSettings02)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, biosSettings03)).To(Succeed())
 		Eventually(Get(biosSettings03)).Should(Satisfy(apierrors.IsNotFound))
-		Eventually(Object(server01)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server02)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
+		Eventually(Object(server01)).Should(testutils.ServerNotParked)
+		Eventually(Object(server02)).Should(testutils.ServerNotParked)
+		Eventually(Object(server03)).Should(testutils.ServerNotParked)
 	})
 
 	It("should successfully wait and reconcile until all resources are updated", func(ctx SpecContext) {
@@ -499,20 +498,6 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 			HaveField("Status.FailedBIOSSettings", BeNumerically("==", 0)),
 		))
 
-		By("Checking if the server BIOSSetting Ref has not be overritten by the 2nd BIOSSettingsSet")
-		Eventually(Object(server02)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings02.Name)),
-		)
-		Consistently(Object(server02)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings02.Name)),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings03.Name)),
-		)
-		Consistently(Object(server03)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings03.Name)),
-		)
-
 		By("Checking the status of the 2nd BIOSSettingsSet")
 		Eventually(Object(biosSettingsSet2)).Should(SatisfyAll(
 			HaveField("Status.FullyLabeledServers", BeNumerically("==", 2)),
@@ -536,14 +521,6 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		Eventually(Get(biosSettings02)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, biosSettings03)).To(Succeed())
 		Eventually(Get(biosSettings03)).Should(Satisfy(apierrors.IsNotFound))
-
-		By("Checking if the server BIOSSetting Ref is empty")
-		Eventually(Object(server02)).Should(
-			HaveField("Spec.BIOSSettingsRef", BeNil()),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Spec.BIOSSettingsRef", BeNil()),
-		)
 
 		By("Checking the status at the 2nd BIOSSettingsSet")
 		Eventually(Object(biosSettingsSet2)).Should(SatisfyAll(
@@ -582,20 +559,6 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		}
 		Eventually(Get(biosSettings03_02)).Should(Succeed())
 
-		By("Checking if the server BIOSSetting Ref has been set by the 2nd BIOSSettingsSet")
-		Eventually(Object(server02)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings02_02.Name)),
-		)
-		Consistently(Object(server02)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings02_02.Name)),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings03_02.Name)),
-		)
-		Consistently(Object(server03)).Should(
-			HaveField("Spec.BIOSSettingsRef.Name", Equal(biosSettings03_02.Name)),
-		)
-
 		By("Checking if the status has been updated")
 		Eventually(Object(biosSettingsSet2)).Should(SatisfyAll(
 			HaveField("Status.FullyLabeledServers", BeNumerically("==", 2)),
@@ -613,15 +576,9 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		Eventually(Get(biosSettings02_02)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, biosSettings03_02)).To(Succeed())
 		Eventually(Get(biosSettings03_02)).Should(Satisfy(apierrors.IsNotFound))
-		Eventually(Object(server01)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server02)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
+		Eventually(Object(server01)).Should(testutils.ServerNotParked)
+		Eventually(Object(server02)).Should(testutils.ServerNotParked)
+		Eventually(Object(server03)).Should(testutils.ServerNotParked)
 	})
 
 	It("Should successfully retry failed state child resources", func(ctx SpecContext) {
@@ -790,14 +747,8 @@ var _ = Describe("BIOSSettingsSet Controller", func() {
 		Eventually(Get(biosSettings02)).Should(Satisfy(apierrors.IsNotFound))
 		Expect(k8sClient.Delete(ctx, biosSettings03)).To(Succeed())
 		Eventually(Get(biosSettings03)).Should(Satisfy(apierrors.IsNotFound))
-		Eventually(Object(server01)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server02)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
-		Eventually(Object(server03)).Should(
-			HaveField("Status.State", Not(Equal(metalv1alpha1.ServerStateMaintenance))),
-		)
+		Eventually(Object(server01)).Should(testutils.ServerNotParked)
+		Eventually(Object(server02)).Should(testutils.ServerNotParked)
+		Eventually(Object(server03)).Should(testutils.ServerNotParked)
 	})
 })

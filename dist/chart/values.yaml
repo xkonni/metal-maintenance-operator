@@ -172,13 +172,20 @@ metrics:
   port: 8443
   # Enable secure metrics: HTTPS with certs/auth (true) or HTTP (false).
   # Note: Metrics authn/authz needs ClusterRole access.
-  secure: true
+  secure: false
 
 ## Cert-manager integration for TLS certificates.
 ## Required for webhook certificates and metrics endpoint certificates.
 ##
 certManager:
   enable: false
+
+## Webhook server configuration.
+## Requires certManager.enable=true for TLS certificate provisioning.
+##
+webhook:
+  enable: false
+  port: 9443
 
 ## Prometheus ServiceMonitor for metrics scraping.
 ## Requires prometheus-operator to be installed in the cluster.

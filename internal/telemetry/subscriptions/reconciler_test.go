@@ -803,23 +803,28 @@ func TestNotifyTestEvent_MatchingID_RecordsSuccess(t *testing.T) {
 	}
 }
 
-func TestNotifyTestEvent_AnyID_RecordsSuccess(t *testing.T) {
-	// With time-window correlation, any event arrival for a BMC with a
-	// pending test entry records success — the messageId is not checked.
-	c := newClientWith(t, bmcObject(testBMCName, vendorDellInc, modelR650))
-	res := &fakeResolver{}
-	res.set(makeResolved(), nil)
-	fc := &fakeClient{}
-	rec := &fakeTestRecorder{}
-	cfg := cfgWithTestInterval(time.Millisecond)
-	r := newRecWithTestRecorder(t, c, cfg, res, &fakeFactory{client: fc}, rec)
+func TestNotifyTestEvent_AnyMessageId_RecordsSuccess(t *testing.T) {
+	// Correlation is time-window based: any event arriving before the
+	// deadline confirms success, regardless of messageId. BMCs like iDRAC
+	// rewrite the messageId, so strict matching would cause false negatives.
+	for _, notifyID := range []string{"any-id", strings.ToUpper(testMessageId), "IDRAC.2.9.SYS1000"} {
+		t.Run(notifyID, func(t *testing.T) {
+			c := newClientWith(t, bmcObject(testBMCName, vendorDellInc, modelR650))
+			res := &fakeResolver{}
+			res.set(makeResolved(), nil)
+			fc := &fakeClient{}
+			rec := &fakeTestRecorder{}
+			cfg := cfgWithTestInterval(time.Millisecond)
+			r := newRecWithTestRecorder(t, c, cfg, res, &fakeFactory{client: fc}, rec)
 
-	if _, err := r.Reconcile(context.Background(), req()); err != nil {
-		t.Fatalf("Reconcile: %v", err)
-	}
-	r.NotifyTestEvent(testBMCName, "any-id-works")
-	if results := rec.snapshotResults(); len(results) != 1 || results[0].result != "success" {
-		t.Errorf("any messageId should confirm success, got %+v", results)
+			if _, err := r.Reconcile(context.Background(), req()); err != nil {
+				t.Fatalf("Reconcile: %v", err)
+			}
+			r.NotifyTestEvent(testBMCName, notifyID)
+			if results := rec.snapshotResults(); len(results) != 1 || results[0].result != "success" {
+				t.Errorf("messageId %q should confirm success, got %+v", notifyID, results)
+			}
+		})
 	}
 }
 

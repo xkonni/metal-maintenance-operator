@@ -173,6 +173,18 @@ func SetupTest(redfishMockServers []netip.AddrPort) *corev1.Namespace {
 			Scheme: k8sManager.GetScheme(),
 		}).SetupWithManager(k8sManager)).To(Succeed())
 
+		Expect((&BMCUserReconciler{
+			Client:             k8sManager.GetClient(),
+			Scheme:             k8sManager.GetScheme(),
+			DefaultProtocol:    metalv1alpha1.HTTPProtocolScheme,
+			SkipCertValidation: true,
+			BMCOptions: bmc.Options{
+				PowerPollingInterval: 50 * time.Millisecond,
+				PowerPollingTimeout:  200 * time.Millisecond,
+				BasicAuth:            true,
+			},
+		}).SetupWithManager(k8sManager)).To(Succeed())
+
 		// simcontrollers.BMCReconciler/ServerReconciler mimic metal-operator's real
 		// BMC/Server controllers - which live in metal-operator's internal package
 		// and can't be imported - by syncing status (PowerState, FirmwareVersion,
@@ -229,6 +241,19 @@ func SetupTest(redfishMockServers []netip.AddrPort) *corev1.Namespace {
 			},
 		)).To(Succeed())
 
+		Expect(k8sManager.GetFieldIndexer().IndexField(
+			mgrCtx,
+			&baseboardv1alpha1.BMCSettings{},
+			constants.BMCRefField,
+			func(obj client.Object) []string {
+				s := obj.(*baseboardv1alpha1.BMCSettings)
+				if s.Spec.BMCRef == nil || s.Spec.BMCRef.Name == "" {
+					return nil
+				}
+				return []string{s.Spec.BMCRef.Name}
+			},
+		)).To(Succeed())
+
 		if len(redfishMockServers) > 0 {
 			mockServers = make([]*mockserver.MockServer, 0, len(redfishMockServers))
 			for _, serverAddr := range redfishMockServers {
@@ -277,6 +302,7 @@ func EnsureCleanState() {
 		&baseboardv1alpha1.BMCSettingsSetList{},
 		&baseboardv1alpha1.BMCVersionList{},
 		&baseboardv1alpha1.BMCVersionSetList{},
+		&baseboardv1alpha1.BMCUserList{},
 	}
 
 	for _, list := range objectLists {

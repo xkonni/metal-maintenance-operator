@@ -16,6 +16,7 @@ import (
 	"github.com/ironcore-dev/metal-maintenance-operator/internal/ignition"
 	"github.com/ironcore-dev/metal-maintenance-operator/internal/server"
 	telemetryruntime "github.com/ironcore-dev/metal-maintenance-operator/internal/telemetry/runtime"
+	promsink "github.com/ironcore-dev/metal-maintenance-operator/internal/telemetry/sink/prometheus"
 	metalv1alpha1bmc "github.com/ironcore-dev/metal-operator/bmc"
 
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
@@ -33,6 +34,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
+	ctrlmetrics "sigs.k8s.io/controller-runtime/pkg/metrics"
 	"sigs.k8s.io/controller-runtime/pkg/metrics/filters"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
@@ -43,6 +45,7 @@ import (
 	readinessv1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/readiness/v1alpha1"
 	systemv1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1"
 	vendorconsolev1alpha1 "github.com/ironcore-dev/metal-maintenance-operator/api/vendorconsole/v1alpha1"
+	"github.com/ironcore-dev/metal-maintenance-operator/internal/constants"
 	baseboardctrl "github.com/ironcore-dev/metal-maintenance-operator/internal/controller/baseboard"
 	maintenancectrl "github.com/ironcore-dev/metal-maintenance-operator/internal/controller/maintenance"
 	readinessctrl "github.com/ironcore-dev/metal-maintenance-operator/internal/controller/readiness"
@@ -52,6 +55,9 @@ import (
 	metalv1alpha1 "github.com/ironcore-dev/metal-operator/api/v1alpha1"
 	// +kubebuilder:scaffold:imports
 )
+
+const maxRepositoryPassesLimit = 5
+const maxFailedAutoRetryCount = 10
 
 var (
 	scheme   = runtime.NewScheme()
@@ -63,9 +69,9 @@ func init() {
 
 	utilruntime.Must(vendorconsolev1alpha1.AddToScheme(scheme))
 	utilruntime.Must(readinessv1alpha1.AddToScheme(scheme))
+	utilruntime.Must(baseboardv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(metalv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(maintenancev1alpha1.AddToScheme(scheme))
-	utilruntime.Must(baseboardv1alpha1.AddToScheme(scheme))
 	utilruntime.Must(systemv1alpha1.AddToScheme(scheme))
 	// +kubebuilder:scaffold:scheme
 }
@@ -80,6 +86,8 @@ func main() {
 	var probeAddr string
 	var secureMetrics bool
 	var enableHTTP2 bool
+	var enableWebhooks bool
+	var webhookServer webhook.Server
 	var tlsOpts []func(*tls.Config)
 	var sanitizationNamespace string
 	var sanitizationImage string
@@ -139,8 +147,8 @@ func main() {
 		"Timeout for BIOS settings application before the task is considered expired.")
 	flag.DurationVar(&rebootTimeoutExpiry, "reboot-timeout-expiry", 10*time.Minute,
 		"Timeout waiting for a server to complete a reboot/power-cycle before the task is considered expired.")
-	flag.IntVar(&maxRepositoryPasses, "max-repository-passes", 5,
-		"Maximum number of check->apply->track->recheck passes a FirmwareUpdateDell may take before being marked Failed.")
+	flag.IntVar(&maxRepositoryPasses, "max-repository-passes", maxRepositoryPassesLimit,
+		"Maximum number of check->apply->track->recheck passes a FirmwareUpdate may take before being marked Failed.")
 
 	// Telemetry collector flags. The whole pipeline is gated by
 	// --enable-telemetry — when off (the default), zero telemetry
@@ -190,6 +198,19 @@ func main() {
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
+
+	if maxRepositoryPasses < 1 || maxRepositoryPasses > maxRepositoryPassesLimit {
+		setupLog.Error(
+			nil, "Invalid --max-repository-passes value, must be between 1 and maxRepositoryPassesLimit", "value",
+			maxRepositoryPasses, "limit", maxRepositoryPassesLimit)
+		os.Exit(1)
+	}
+
+	if defaultFailedAutoRetryCountInt < 0 || defaultFailedAutoRetryCountInt > maxFailedAutoRetryCount {
+		setupLog.Error(nil, "Invalid --default-failed-auto-retry-count value, must be between 0 and maxFailedAutoRetryCount",
+			"value", defaultFailedAutoRetryCountInt, "limit", maxFailedAutoRetryCount)
+		os.Exit(1)
+	}
 
 	if sanitizationNamespace == "" {
 		setupLog.Error(nil, "Must specify --sanitization-namespace")
@@ -252,10 +273,12 @@ func main() {
 			config.GetCertificate = webhookCertWatcher.GetCertificate
 		})
 	}
-
-	webhookServer := webhook.NewServer(webhook.Options{
-		TLSOpts: webhookTLSOpts,
-	})
+	enableWebhooks = os.Getenv("ENABLE_WEBHOOKS") != "false"
+	if enableWebhooks {
+		webhookServer = webhook.NewServer(webhook.Options{
+			TLSOpts: webhookTLSOpts,
+		})
+	}
 
 	// Metrics endpoint is enabled in 'config/default/kustomization.yaml'. The Metrics options configure the server.
 	// More info:
@@ -330,6 +353,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := promsink.NewFirmwareStateCollector(mgr.GetClient(), ctrlmetrics.Registry); err != nil {
+		setupLog.Error(err, "Failed to register FirmwareStateCollector")
+		os.Exit(1)
+	}
+	if err := promsink.NewSettingsStateCollector(mgr.GetClient(), ctrlmetrics.Registry); err != nil {
+		setupLog.Error(err, "Failed to register SettingsStateCollector")
+		os.Exit(1)
+	}
+
 	if err = (&vendorconsolectrl.ConsoleReconciler{
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
@@ -386,9 +418,46 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&systemv1alpha1.BIOSSettings{},
+		constants.ServerRefField,
+		func(rawObj client.Object) []string {
+			s, ok := rawObj.(*systemv1alpha1.BIOSSettings)
+			if !ok {
+				return nil
+			}
+			if s.Spec.ServerRef != nil && s.Spec.ServerRef.Name != "" {
+				return []string{s.Spec.ServerRef.Name}
+			}
+			return nil
+		}); err != nil {
+		setupLog.Error(err, "Failed to set up BIOSSettings field indexer")
+		os.Exit(1)
+	}
+
+	if err := mgr.GetFieldIndexer().IndexField(
+		context.Background(),
+		&baseboardv1alpha1.BMCSettings{},
+		constants.BMCRefField,
+		func(rawObj client.Object) []string {
+			s, ok := rawObj.(*baseboardv1alpha1.BMCSettings)
+			if !ok {
+				return nil
+			}
+			if s.Spec.BMCRef != nil && s.Spec.BMCRef.Name != "" {
+				return []string{s.Spec.BMCRef.Name}
+			}
+			return nil
+		}); err != nil {
+		setupLog.Error(err, "Failed to set up BMCSettings field indexer")
+		os.Exit(1)
+	}
+
 	if err = (&maintenancectrl.ServerMaintenanceReconciler{
-		Client: mgr.GetClient(),
-		Scheme: mgr.GetScheme(),
+		Client:         mgr.GetClient(),
+		Scheme:         mgr.GetScheme(),
+		ResyncInterval: resyncInterval,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "Unable to create ServerMaintenance controller")
 		os.Exit(1)
@@ -396,6 +465,7 @@ func main() {
 
 	accessor := conditionutils.NewAccessor(conditionutils.AccessorOptions{})
 	bmcOpts := metalv1alpha1bmc.Options{
+		BasicAuth:            true,
 		PowerPollingInterval: 5 * time.Second,
 		PowerPollingTimeout:  2 * time.Minute,
 	}
@@ -482,7 +552,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = (&systemctrl.FirmwareUpdateDellReconciler{
+	if err = (&systemctrl.FirmwareUpdateReconciler{
 		Client:                      mgr.GetClient(),
 		ManagerNamespace:            managerNamespace,
 		DefaultProtocol:             protocol,
@@ -494,7 +564,7 @@ func main() {
 		DefaultFailedAutoRetryCount: int32(defaultFailedAutoRetryCountInt),
 		MaxRepositoryPasses:         int32(maxRepositoryPasses),
 	}).SetupWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create FirmwareUpdateDell controller")
+		setupLog.Error(err, "Unable to create FirmwareUpdate controller")
 		os.Exit(1)
 	}
 
@@ -516,23 +586,36 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err = maintenancewebhook.SetupBMCSettingsWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create BMCSettings webhook")
-		os.Exit(1)
+	if enableWebhooks {
+		if err = maintenancewebhook.SetupBMCSettingsWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to set up BMCSettings webhook")
+			os.Exit(1)
+		}
+
+		if err = maintenancewebhook.SetupBMCVersionWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to set up BMCVersion webhook")
+			os.Exit(1)
+		}
+
+		if err = maintenancewebhook.SetupBIOSSettingsWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to set up BIOSSettings webhook")
+			os.Exit(1)
+		}
+
+		if err = maintenancewebhook.SetupBIOSVersionWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "Failed to set up BIOSVersion webhook")
+			os.Exit(1)
+		}
 	}
 
-	if err = maintenancewebhook.SetupBMCVersionWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create BMCVersion webhook")
-		os.Exit(1)
-	}
-
-	if err = maintenancewebhook.SetupBIOSSettingsWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create BIOSSettings webhook")
-		os.Exit(1)
-	}
-
-	if err = maintenancewebhook.SetupBIOSVersionWebhookWithManager(mgr); err != nil {
-		setupLog.Error(err, "Unable to create BIOSVersion webhook")
+	if err = (&baseboardctrl.BMCUserReconciler{
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		DefaultProtocol:    protocol,
+		SkipCertValidation: skipCertValidation,
+		BMCOptions:         bmcOpts,
+	}).SetupWithManager(mgr); err != nil {
+		setupLog.Error(err, "Failed to create BMCUser controller")
 		os.Exit(1)
 	}
 	// +kubebuilder:scaffold:builder

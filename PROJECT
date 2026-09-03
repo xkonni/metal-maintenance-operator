@@ -13,115 +13,88 @@ plugins:
 projectName: metal-maintenance-operator
 repo: github.com/ironcore-dev/metal-maintenance-operator
 resources:
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: vendorconsole
   kind: Console
   path: github.com/ironcore-dev/metal-maintenance-operator/api/vendorconsole/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: readiness
   kind: ServerWiring
   path: github.com/ironcore-dev/metal-maintenance-operator/api/readiness/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-    namespaced: true
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: maintenance
   kind: ServerMaintenance
   path: github.com/ironcore-dev/metal-maintenance-operator/api/maintenance/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: baseboard
   kind: BMCSettings
   path: github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1
   version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: baseboard
   kind: BMCSettingsSet
   path: github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: baseboard
   kind: BMCVersion
   path: github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1
   version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: baseboard
   kind: BMCVersionSet
   path: github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: system
   kind: BIOSSettings
   path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
   version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: system
   kind: BIOSSettingsSet
   path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: system
   kind: BIOSVersion
   path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
   version: v1alpha1
-  webhooks:
-    validation: true
-    webhookVersion: v1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
   domain: metal.ironcore.dev
   group: system
   kind: BIOSVersionSet
   path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
   version: v1alpha1
-- api:
-    crdVersion: v1
-  controller: true
+- controller: true
+  domain: metal.ironcore.dev
+  group: baseboard
+  kind: BMCUser
+  path: github.com/ironcore-dev/metal-maintenance-operator/api/baseboard/v1alpha1
+  version: v1alpha1
+- controller: true
   domain: metal.ironcore.dev
   group: system
-  kind: FirmwareUpdateDell
+  kind: FirmwareUpdate
+  path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
+  version: v1alpha1
+- controller: true
+  domain: metal.ironcore.dev
+  group: system
+  kind: FirmwareUpdateSet
   path: github.com/ironcore-dev/metal-maintenance-operator/api/system/v1alpha1
   version: v1alpha1
 version: "3"
